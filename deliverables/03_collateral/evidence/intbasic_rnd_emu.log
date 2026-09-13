@@ -1,0 +1,6 @@
+feedback == b14 xor b13: True
+start (0, 0) first out 0x100 cycle length 32767 after 0
+start (1, 0) first out 0x1 cycle length 32767 after 0
+start (52, 18) first out 0x1234 cycle length 32767 after 0
+start (255, 255) first out 0x7fff cycle length 32767 after 0
+increments/sec at 15 cycles/loop: 68032.26666666666  seconds per 16-bit wrap: 0.9633076069786494

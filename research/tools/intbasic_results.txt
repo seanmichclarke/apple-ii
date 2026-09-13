@@ -1,0 +1,4 @@
+calls 32768 distinct 15-bit working values 32767 missing (1..7FFF) 0 first missing [] max repeat 2
+block $2000-$20FF hits: 256  block $6000-$60FF hits: 256
+RND(1000) outputs: min 0 max 999; counts per 100-bucket: [3299, 3300, 3300, 3300, 3300, 3300, 3301, 3268, 3200, 3200]
+first seeds: ['1234', '5972', '2E5D', '4B98', '72A7', '5FA5']

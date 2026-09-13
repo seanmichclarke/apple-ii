@@ -1,0 +1,4 @@
+{"preperiod": 1060, "period": 37758, "first_repeat_call": 38818, "exp": "RND(-1)"}
+{"preperiod": 20326, "period": 202, "first_repeat_call": 20528, "exp": "RND(-22258)"}
+{"preperiod": 557, "period": 37758, "first_repeat_call": 38315, "exp": "RND(-41854)"}
+{"preperiod": null, "period": null, "note": "no cycle within 40000 calls", "exp": "RND(-56536)"}
