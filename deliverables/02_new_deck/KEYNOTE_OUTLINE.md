@@ -602,7 +602,7 @@ Main talk: slides 0–19. Backup: B1–B7.
 **On screen**
 
 - **Same:** Microsoft’s generator and constants / Seed-copy bug in every Microsoft 6502 BASIC
-- **Different:** Microsoft’s Commodore build: RND(0) reads hardware timers (PET, 1977) / A TI clock variable / Idiom: `RND(−TI)
+- **Different:** Microsoft’s Commodore build: RND(0) reads hardware timers (PET, 1977) / A TI clock variable / Idiom: RND(−TI)
 - Commodore got the platform integration from Microsoft. Apple did its own, and skipped RND.
 
 **Source line:** Microsoft m6502.asm (IFE REALIO-3, TIME==1); Steil, msbasic and c64ref

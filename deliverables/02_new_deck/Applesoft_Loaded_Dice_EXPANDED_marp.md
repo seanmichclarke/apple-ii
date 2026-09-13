@@ -675,7 +675,7 @@ The answer to "what's at $F5CB?". Answer it straight.
 # Backup: Commodore, same generator, different integration
 **Same:** Microsoft’s generator and constants / Seed-copy bug in every Microsoft 6502 BASIC
 
-**Different:** Microsoft’s Commodore build: RND(0) reads hardware timers (PET, 1977) / A TI clock variable / Idiom: `RND(−TI)
+**Different:** Microsoft’s Commodore build: RND(0) reads hardware timers (PET, 1977) / A TI clock variable / Idiom: RND(−TI)
 
 > Commodore got the platform integration from Microsoft. Apple did its own, and skipped RND.
 
