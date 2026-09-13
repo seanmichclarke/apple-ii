@@ -125,6 +125,15 @@ Check the scan image before putting a quote on a slide.
    `Unenh_IIe_80col` (`$CB15 GETKEY`) is byte-identical in AppleWin `Apple2e.rom` and
    apple2js `apple2e.ts`. The image captioned `IIc_16kb` (`$CC71`, `E6 4E D0 1C A5 4F`)
    matches no //e, ][+ or II image. No //c dump was available, so it is unverified.
+(Items 10–11 were added after item 9 was written.)
+10. **Power-on `$CD` in emulators.** AppleWin's default RAM fill (`source/Core.cpp`
+    `g_nMemoryClearType = MIP_FF_FF_00_00`; `source/Memory.cpp` `MemReset`) and MAME's
+    (`src/mame/apple/apple2.cpp`, `adr`=0 / `adr+1`=`$FF`) both leave `$FF` at `$CD`. Typed
+    into the ][+ ROM with those fills, `PRINT RND(1)` prints `.973136996`, the deck's slide 2
+    number. Zeroed RAM prints `.270011996`. Real hardware is still unmeasured.
+11. **HFIND (`$F5CB`).** S-C DocuMentor `F5BA.html` line 1110: "(NOT CALLED BY ANY
+    APPLESOFT ROUTINE)". An independent synced ROM scan finds no reference into
+    `$F5CB–$F5FF`; the only reference into the region is HLIN's `BEQ $F600`.
 9. **"Loaded dice."** Die faces from `INT(RND(1)*6)+1`, computed by the ROM, are
    consistent with a fair die over every long cycle (faces, pairs, triples). The ROM result
    never differed from exact ⌊6x⌋+1 in 128,550 outputs. See `deck-code-audit.md` §1–2.

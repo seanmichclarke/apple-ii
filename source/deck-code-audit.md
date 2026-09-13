@@ -1,138 +1,226 @@
 # Deck code audit: "Applesoft's Loaded Dice" (Jeff Robison, VCF Midwest 21)
 
-Audited 2026-09-12 by the source-code agent against `deck/Applesoft_Loaded_Dice_Deck_1.pptx`
-(slide text `ppt/slides/slideN.xml`, notes `ppt/notesSlides/notesSlideN.xml`, and all 11
-embedded images, transcribed by eye). Every code listing, constant, address and numeric
-claim on the 10 slides and in the notes is checked against the verified ROM bytes and
-emulation in this directory.
+Audited 2026-09-12 by the source-code agent against `deck/Applesoft_Loaded_Dice_Deck_1.pptx`:
+slide text, speaker notes, and all 11 embedded images, transcribed by eye. Every code
+listing, constant, address and numeric claim is checked against the verified ROM bytes,
+the published disassemblies, and emulation.
 
-Verdicts: **CORRECT** / **WRONG** / **UNVERIFIABLE** (can't be settled from the ROM bytes,
-the listings or emulation). Evidence labels as in `applesoft-rnd.md`: **(a)** ROM bytes or
-published listing, **(E)** measured by running the ROM, **(c)** inference.
+**The deck's thesis, as audited:** a **seed regression**. Integer BASIC's `RND` draws on
+the `$4E/$4F` keyboard-wait counter. Applesoft's `RND` uses its own seed at `$C9`, loaded
+from ROM at boot, so a cold boot gives the same sequence every time. "Loaded dice" is a
+metaphor for a predetermined start. It is not a claim of non-uniform output.
 
-New measurements come from `tools/deck_audit.py`. Every die face in it is computed by the
-ROM's own `RND` → `FMULT` (×6.0) → `INT`. That path was checked against BASIC itself: 40 of
-40 faces printed by `FOR I=1 TO 40: PRINT INT(RND(1)*6)+1;: NEXT` matched. `verify.py`
-re-run today: 402 listing comparisons, 0 mismatches; all demos OK.
+Verdicts: **CORRECT** / **WRONG** / **UNVERIFIABLE** (can't be settled from ROM bytes,
+listings or emulation). Evidence labels: **(a)** ROM bytes or published listing, **(E)**
+measured by running the ROM, **(c)** inference.
 
----
-
-## 1. The thesis question: are Applesoft's dice loaded?
-
-**Short answer: no, not in the sense the title says. The code does not produce a biased
-die. It produces a scripted one.**
-
-First, a correction to the question's premise. Applesoft `RND` is not an LCG. There is no
-modulus. It multiplies by 11879546.40625, adds a constant that is almost always lost to
-precision, swaps the most and least significant mantissa bytes, and renormalizes into
-(0,1) (`applesoft-rnd.md` §2–4). LCG theory (lattices, "weak low-order bits" in the
-mod-2ᵏ sense) doesn't carry over. The low-bit defect it really has is different: fraction
-bit 25 is set 99.75% of the time (§5.3). That bit has weight 2⁻²⁵, so no dice, card or
-percentage roll can see it.
-
-### 1.1 Distribution over whole cycles (the exact long-run behaviour)
-
-Every Applesoft trajectory ends in a loop, so the face counts over one full loop *are* its
-long-run distribution, not a sample estimate. All numbers **(E)**, ROM-computed:
-
-| Start (cycle) | Face counts 1–6 over one full loop | Faces χ² (5 df) | Pairs χ² (35 df) | Triples χ² (215 df) |
-|---|---|---|---|---|
-| cold `$CD=$FF`, the .973136996 machine (37,758) | 6377 6211 6228 6314 6285 6343 | 3.34, p=0.65 | 28.94, p=0.76 | 224.7, p=0.31 |
-| `RND(-2)` (32,366) | 5336 5313 5349 5487 5458 5423 | 4.73, p=0.45 | 44.18, p=0.14 | 231.0, p=0.22 |
-| cold `$CD=$A8` (12,559) | 2126 2097 2097 2033 2134 2072 | 3.27, p=0.66 | 32.32, p=0.60 | 201.7, p=0.73 |
-| cold `$CD=$BC` (4,082) | 707 681 708 650 646 690 | 5.39, p=0.37 | 37.77, p=0.34 | 194.9, p=0.83 |
-| cold `$CD=$58` (**202**) | 40 29 31 45 23 34 | 9.25, p=0.10 | n/a | n/a |
-
-(5% critical values: 11.07 / 49.80 / ≈250. p-values from the χ² survival function.)
-
-In the four long loops, single faces, consecutive pairs and triples are all consistent with
-a fair die. Over the .973136996 machine's 37,758-roll loop, the largest deviation of any face
-from 1/6 is 0.0022, against a 1-σ of 0.0019 for fair rolls. Earlier work agrees: 10-bin and
-256-bin χ², lag-1 serial correlation −0.004 (`research/tools/distribution_results.jsonl`),
-and the serial-pair χ² in `applesoft-rnd.md` §5.3.
-
-### 1.2 Where "loaded" *does* hold, and why it's the wrong word
-
-1. **The 202-roll loop.** Of the 256 possible power-on values of `$CD`, 59 (23%) lead
-   an untouched program into a 202-number loop. The example starts in the sweep entered it
-   after 3,062–23,318 calls (`$58`, the byte the ROM meant to copy, after 15,382). Inside it,
-   the long-run shares are fixed forever: face 4 comes up 22.3% of the time and face 5 11.4%.
-   That is a permanently lopsided die. But the imbalance is what 202 fair rolls would show
-   one time in ten (p=0.10). The defect is that the same 202 rolls repeat, not a weighting
-   mechanism. This is Kaner & Vokey's "repeating itself every 202 numbers" (LITERATURE
-   [A3]), reproduced on the ROM.
-2. **Using the reseed's return value.** For every K from 1 to 65,535, `RND(-K)` returns
-   ≈3×10⁻⁸, so `INT(RND(-K)*6)+1` is **1 in 65,535 of 65,535 cases** (E). That *is* a fully
-   loaded die, but only in code that uses the number the reseed returns.
-3. **Reseeding inside the loop.** `X=RND(-7): PRINT RND(1)` in a loop prints one value
-   forever (`demos.md` Demo 3, line 80). That's a misuse, not a bias.
-
-### 1.3 What the disassembly does support
-
-* **Predetermined rolls.** With the same power-on byte at `$CD`, every power-on gives the
-  same rolls. On the `$CD=$FF` machine the first 20 dice are always
-  `6 1 1 5 4 4 6 4 5 5 1 5 6 6 4 2 3 6 3 1` (E).
-* **Short loops.** Every trajectory falls into one of five loops: 37,758, 32,366,
-  12,559, 4,082 or 202 (`applesoft-rnd.md` §5.2).
-* **No entropy by default.** `RND` never reads `$4E/$4F`, and only COLD.START and `RND`
-  write `$C9–$CD` (§5.7; §3 below, slide 6).
-* **`RND(-K)` returns a useless value**, and `RND(0)` doesn't reseed.
-
-**Proposed framing.** The dice aren't loaded, they're **scripted**. Candidate titles:
-*"Applesoft's Stacked Deck"* (a stacked deck is fair cards in a fixed order, which is exactly
-what the code does), or keep *"Loaded Dice"* as the hook and make slide 2 say it outright:
-*"The dice aren't weighted. They're pre-rolled."* A one-sentence thesis the code supports:
-
-> Applesoft's RND rolls fair-looking dice from a script: the same power-on memory gives the
-> same rolls, every sequence ends in a loop, and nearly a quarter of power-on states end up
-> in a loop only 202 rolls long.
-
-This also fits the deck's real argument, which is about seeding, not bias. The title is
-Jeff's call; this section is the evidence for it.
+Tools: `tools/deck_audit.py` (new measurements), `tools/verify.py` (re-run today: 402 listing
+comparisons, 0 mismatches; all demos OK).
 
 ---
 
-## 2. Is `INT(RND(1)*6)+1` biased by truncation? The arithmetic
+## 1. Priority verification targets
 
-**No, not at any detectable level.** Modulo bias needs a *small integer range reduced mod
-N*. Applesoft doesn't do that. It scales a 32-bit fraction and truncates.
+### Target 1: `.973136996` is the first `PRINT RND(1)` after a cold boot (slide 2)
 
-**Ideal bound.** Suppose x took each of the 2³² values k/2³² equally often. Face f is hit by
-the k in [⌈(f−1)·2³²/6⌉, ⌈f·2³²/6⌉). 2³²/6 = 715,827,882.67, so the counts are
+**Verdict: CORRECT, digit for digit, when the power-on RAM byte at `$CD` is `$FE` or
+`$FF`. It is not guaranteed by the ROM alone.**
+
+* **Emulator run, typed at the `]` prompt** (Apple ][+ ROM, py65, no DOS) **(E)**:
+
+  | Power-on RAM fill | `PEEK(205)` | first `PRINT RND(1)` | second |
+  |---|---|---|---|
+  | **AppleWin default** (`MIP_FF_FF_00_00`) | 255 | **.973136996** | .103117626 |
+  | **MAME apple2** (even bytes `$00`, odd `$FF`) | 255 | **.973136996** | .103117626 |
+  | all `$FF` | 255 | **.973136996** | .103117626 |
+  | all `$00` | 0 | .270011996 | .139756248 |
+
+  The fill patterns come from the emulators' own source. AppleWin `source/Core.cpp:79`
+  sets `g_nMemoryClearType = MIP_FF_FF_00_00` by default. `source/Memory.cpp` `MemReset`
+  then writes `$FF` to offsets 0 and 1 of every 4 bytes, and `$CD` = 205 ≡ 1 (mod 4).
+  MAME `src/mame/apple/apple2.cpp` fills `adr` with `0` and `adr+1` with `$FF` in steps of
+  2, and `$CD` is odd. **(a)** for both fill rules. The emulated result is **(E)**.
+* **Why it depends on RAM.** Cold start copies only four seed bytes (Target 5), so `$CD`
+  keeps its power-on value. That byte is the low mantissa byte of the seed. `RND` swaps the
+  low and high mantissa bytes after multiplying, which pushes it into the leading digits.
+  Across the 256 possible values of `$CD` there are **181 different first outputs**. Only
+  `$FE` and `$FF` give `.973136996` (seed afterwards `80 79 1F 81 94`). **(E)**
+* **Scope limits.**
+  * Real hardware's power-on DRAM contents were **not measured**. Both major emulators model
+    them as a `$00/$FF` stripe that puts `$FF` at `$CD`, which is consistent with the slide.
+  * Only the ][+ boot was emulated. The //e and enhanced //e have byte-identical `RND`, seed
+    table and copy loop (a), but their reset firmware wasn't traced for writes to `$CD`.
+  * AppleWin's default machine is an enhanced //e.
+  * A DOS 3.3 boot from disk was not emulated.
+  * AppleWin's `-memclear` switch changes the fill; `-memclear 0` gives zeroed RAM and
+    `.270011996`.
+* **What does *not* repeat it.** Ctrl-RESET preserves the seed, so the next `PRINT RND(1)`
+  gives the *next* value, `.103117626`, not the same one. `CALL -151` / `E000G` reloads four
+  bytes and leaves `$CD` as the last `RND` left it, so the value differs. **(E)**
+
+**Live-demo checklist (slide 1 notes, slide 2):**
+1. Rehearse on the exact machine or emulator and boot path used on stage.
+2. Use a true power cycle, not Ctrl-RESET.
+3. Optionally type `PRINT PEEK(205)` first. It reads `255` without touching the seed, and it
+   shows the audience the leftover byte.
+4. Make sure no HELLO program calls `RND`.
+
+### Target 2: `$C9` is Applesoft's seed, loaded with a fixed ROM value at boot (slides 6, 8)
+
+**Verdict: `$C9` CORRECT. "Fixed value from ROM" CORRECT for 4 of 5 bytes, WRONG as
+stated.**
+
+* The seed is the 5-byte packed float `RNDSEED` at **`$C9–$CD`** (S-C DocuMentor
+  definitions). `RND` loads it with `EFB4: A9 C9 / EFB6: A0 00 / EFB8: 20 F9 EA` and stores
+  back with `EFE3: A2 C9 / EFE5: A0 00 / EFE7: 4C 2B EB`. **(a)**
+* ROM value: `F123: 80 4F C7 52 58`, which is 0.811635157. Cold start writes
+  **`80 4F C7 52` to `$C9–$CC`**, while `$CD` is never written (Target 5). The seed actually
+  used with `$CD=$FF` is `80 4F C7 52 FF`. **(a)+(E)**
+* Nothing else writes `$C9–$CD`. A synced disassembly of `$D000–$FFFF` finds no direct
+  store to them outside COLD.START and `RND`. `NEW`, `CLEAR` and `RUN` leave the seed
+  unchanged. **(a)+(E)**
+* `RND` never reads `$4E/$4F`. The same output came with the counter at `$0041` and at
+  `$3E97`. **(a)+(E)**
+
+### Target 3: `$EF4E` and the `$4E/$4F` KEYIN counter (slides 4, 5)
+
+**Verdict: CORRECT. The counter is bumped once per polling-loop pass. It counts loop
+passes, not keystrokes.**
+
+* Integer BASIC `RND` entry: `EF4E: 20 15 E7 JSR GET16BIT`, then `EF51: A5 4E LDA RNDL` and
+  `EF56: A5 4F LDA RNDH`. It also writes the register back (`EF60: 85 4F`, shift loop `EF66–EF72`), so the counter *is* the
+  generator's state. Two dumps, and a model matched the ROM on 300 of 300 calls. **(a)+(E)**
+* Monitor wait loop, identical in the original and Autostart ROMs **(a)**:
+
+  ```
+  FD1B: E6 4E     KEYIN   INC RNDL      ; every pass, before the keyboard is read
+  FD1D: D0 02             BNE KEYIN2    ; skip high byte unless RNDL wrapped
+  FD1F: E6 4F             INC RNDH
+  FD21: 2C 00 C0  KEYIN2  BIT KBD       ; key down?
+  FD24: 10 F5             BPL KEYIN     ; no: loop back to $FD1B
+  ```
+
+  Each pass is 15 CPU cycles (19 when RNDL wraps), about 68,000 counts per second at
+  ≈1.02 MHz, so the 16-bit counter wraps about once a second. The timing is **(c)**; the
+  clock rate was not measured. The counter is frozen whenever no key wait is running.
+* The //e firmware has the same loop shape: `CB15: E6 4E D0 02 E6 4F AD 00 C0 10 F5 8D 10
+  C0 60` is byte-identical in two unenhanced //e dumps, and the same bytes sit at `$C83B` in
+  the enhanced //e. **(a)**
+
+### Target 4: "Twenty-six instructions" (slide 6 notes, repeated in slide 7 notes)
+
+**Verdict: WRONG. It's 28.**
+
+py65 disassembly of the ROM from `$EFAE` through `JMP STORE.FAC.AT.YX.ROUNDED` at `$EFE7`
+gives 28 instructions, matching the 28 lines on slide 6's own image. **(a)**
+* `RND(1)` executes all 28 (both branches fall through).
+* `RND(-n)` executes 17: `JSR`, `TAX`, the taken `BMI`, then the 14 instructions from
+  `$EFCC`.
+* `RND(0)` executes 8, then the shared `RTS` at `$EFA5`.
+
+A whole `RND(1)` call runs about 953 instructions including the floating-point subroutines
+(E). **Corrected:** "Twenty-eight instructions, plus about 900 more inside the
+floating-point routines it calls."
+
+### Target 5: "The seed copy is off by one" (slide 8, Sander-Cederlof AAL May 1984)
+
+**Verdict: CORRECT. Here's exactly what is off by one.**
+
+COLD.START copies `CHRGET` and the seed from ROM into zero page with one shared loop **(a)**:
 
 ```
-face:   1            2            3            4            5            6
-count:  715,827,883  715,827,883  715,827,882  715,827,883  715,827,883  715,827,882
+F150: A2 1C        LDX #$1C          ; 28
+F152: BD 0A F1  .1 LDA $F10A,X       ; source $F10A+X
+F155: 95 B0        STA $B0,X         ; dest   $B0+X
+F157: 86 F1        STX SPEEDZ
+F159: CA           DEX
+F15A: D0 F6        BNE .1            ; stops when X hits 0
 ```
 
-The largest relative deviation is (2/3)/715,827,882.67 = **9.3×10⁻¹⁰** (E, exact integer arithmetic).
-To see a 1-σ effect of that size (≈1.6×10⁻¹⁰ in probability) you'd need about
-p(1−p)/δ² ≈ 5.8×10¹⁸ rolls. At ≈3 ms per `RND(1)` (§5.5) that is roughly 5×10⁸ years. **(c)**
+X runs from `$1C` down to `$01`, so it copies 28 bytes: `$F10B–$F126` → `$B1–$CC`. The block
+to copy is 29 bytes: the 24-byte `CHRGET` routine (`$F10B–$F122` → `$B1–$C8`) plus the
+5-byte seed (`$F123–$F127` → `$C9–$CD`). The last byte, `$F127` = `$58`, never reaches
+`$CD`. **The count should be `$1D`.**
 
-**The FP representation doesn't change this.** Applesoft values aren't evenly spaced:
-below 0.5 the mantissa gives finer steps. That only makes the lattice finer, never coarser.
-The boundaries 1/6, 1/3, 2/3 and 5/6 are repeating binary fractions (1/6 = 0.0010101…₂),
-so no representable x sits exactly on one. 1/2 is exact, and `INT` puts it in face 4, as it
-should.
+Origin: Microsoft's `m6502.asm` line 6733 computes the count as `LDXI RNDX+4-CHRGET`
+($C9+4−$B1 = $1C). That was right for the 4-byte-float build, where the seed has four
+bytes. It was never widened when the 9-digit build (`ADDPRC`) made floats five bytes. **(a)**
 
-**Rounding in the multiply.** `FMULT` rounds 6·x to 32 mantissa bits, so a value a hair
-below k/6 could in principle round up to exactly k and move to the next face. Measured on
-the ROM: **0 mismatches** between the ROM's `INT(RND(1)*6)+1` and the exact rational
-⌊6x⌋+1 across **128,550 outputs** (all five trajectories above, tails included). No output
-was ≥ 1. **(E)**
+This off-by-one is why Target 1 depends on RAM. It's the only way anything outside the ROM
+reaches the Applesoft seed at boot, and it adds no timing entropy.
 
-**Contrast: Integer BASIC really does have modulo bias, but not for dice.** `RND(6)` is
-(15-bit LFSR state) `MOD 6` (`JMP MOD` at `$EF7D`). Over one full period, the states are
-1..32,767 once each:
+**Slide wording:** "Found the startup bug" is fine as a description of what AAL
+documented. Who spotted it first isn't a code question. Suggested precise version: "The
+cold-start copy loop counts 28 bytes instead of 29, so the seed's last byte is never
+copied."
 
-```
-32767 = 6·5461 + 1   →   RND(6)+1 faces: 5461 5462 5461 5461 5461 5461
-```
+### Target 6: `$F5CB` / HFIND, "supposedly unused by AppleSoft" (slide 9)
 
-Face 2 is 0.018% more likely (E, model validated 300/300 against the ROM). That's
-negligible for dice, but serious for large N. For `RND(20000)`, results 1–12,767 come up
-**twice as often** as 12,768–19,999 (E). That is a genuinely loaded range. Keystroke waits
-also add to the same register, which disturbs the LFSR walk.
+**"Unused by Applesoft": CORRECT. Three sources agree, and the hedge can go. "The patch is
+safe": UNVERIFIABLE, because `Patch_lc.bin` and `LC_Loader.bin` are not in the workspace.
+Hard constraints below.**
+
+Evidence that nothing in the ROM calls HFIND:
+1. **S-C DocuMentor, `F5BA.html`**, lines 1100–1110: `HFIND -- CALCULATES CURRENT POSITION
+   OF HI-RES CURSOR / (NOT CALLED BY ANY APPLESOFT ROUTINE)`. **(a)**
+2. **McFadden's `Applesoft.html`** carries the same comment. The HFIND label has **zero
+   references** in its cross-linked listing. This source is *derived* from S-C, so it is
+   not independent. **(a)**
+3. **Independent ROM scan** of the ][+ image, synced instruction-by-instruction over
+   `$D000–$FFFF`. It finds **no** `JSR`, `JMP`, indirect `JMP`, absolute read or branch that
+   targets `$F5CB–$F5FF`, and no `CB F5`/`CA F5` address-table pair anywhere. **Nothing
+   falls through into it either.** The bytes just before are data: `MSKTBL` at `$F5B2`,
+   `CON_1C` at `$F5B9` and `COSINE_TABLE` at `$F5BA–$F5CA`, preceded by `F5B0: 50 D9 BVC
+   LF58B ;...always`. **(a)**
+
+Evidence about the patch site, which bears on safety **(a)**:
+* HFIND occupies **`$F5CB–$F5FF`, 53 bytes**. It reads `$26/$27` (HBASL/H), `$30` (HMASK)
+  and `$E5`, writes the cursor position to `$E0–$E2`, and ends in the `RTS` at **`$F600`**.
+* **`$F600` is shared.** HLIN (`HPLOT … TO`) branches to it: `F59C: F0 62 BEQ $F600`. **DRAW
+  starts at `$F601`.** A patch longer than 53 bytes, or one that changes `$F600`, breaks
+  line drawing, and a longer one breaks `DRAW`/`XDRAW` too.
+* **`JMP $F5CB` at `$EFAE` overwrites exactly `20 82 EB` (`JSR SIGN`)**, RND's first
+  instruction. The patch has to call `SIGN` itself before it can tell `RND(-n)`, `RND(0)`
+  and `RND(+)` apart.
+* The ROM contract "preserves negative and zero RND()" has to keep:
+  * `RND(0)` returns `$C9–$CD` unchanged (`EFBC: BEQ RTS.19`).
+  * `RND(-K)` seeds deterministically from K.
+  * A counter value of `$0000` passed as a negative seed is zero, so `SIGN` returns 0 and it
+    silently takes the `RND(0)` path.
+
+Not ruled out:
+* **External callers.** HFIND is a named, documented routine in the circulated Applesoft
+  disassemblies, so machine-language hi-res programs could `JSR $F5CB`. No source here
+  establishes whether commercial software does.
+* **Language-card environment.** ProDOS in LC RAM, `INT`/`FP` bank switching, RESET forcing
+  ROM read on the //e and //c: outside the ROM code; see `review/REVIEW_A_TECHNICAL.md` §3.
+
+**Corrected slide text:** "Patch (≤ 53 bytes) overwrites HFIND at `$F5CB–$F5FF`, which no
+Applesoft or monitor code calls (S-C DocuMentor; ROM scan). The shared `RTS` at `$F600` is
+untouched."
+
+**To verify the patch:** supply `Patch_lc.bin` and `LC_Loader.bin`. They can be run on the
+][+ ROM in this emulator to check the length, that `$F600` is intact, `RND(0)`, `RND(-1)`
+repeatability, and `HLIN`/`DRAW` still returning.
+
+---
+
+## 2. The thesis as a whole: uniform but deterministic, same sequence every cold boot
+
+| Part of the claim | Verdict | Evidence |
+|---|---|---|
+| Deterministic | **CORRECT** | Output depends only on the 5 seed bytes; `demos.md` Demo 1B replays the power-on sequence exactly (E) |
+| Identical sequence every cold boot | **CORRECT per machine** | Holds whenever power-on RAM gives the same `$CD`; AppleWin default and MAME both give `$FF` (§1 Target 1). Not every *machine*: 181 first values exist across `$CD` (E) |
+| Seeded from a fixed ROM value | **Mostly**: 4 of 5 bytes | Target 5 |
+| Integer BASIC gets real, modest entropy from key waits | **CORRECT** | `$4E/$4F` is its state, and every `KEYIN` pass bumps it; same program, different key timing, different output (E) |
+| The entropy source remains, unused by Applesoft | **CORRECT** | Autostart KEYIN still counts; Applesoft never reads it (a)+(E) |
+| "Uniform" (not a deck claim, but it holds) | **CORRECT** | Appendix A |
+
+Two caveats a pedant may raise, both consistent with the thesis:
+* Warm paths don't reseed. Ctrl-RESET continues the sequence (E).
+* Every Applesoft sequence eventually loops: 37,758, 32,366, 12,559, 4,082 or 202 numbers
+  (`applesoft-rnd.md` §5.2). That's a generator defect, separate from the seed regression.
+  Slide 8's notes allude to the 202 loop.
 
 ---
 
@@ -142,34 +230,34 @@ also add to the same register, which disturbs the LFSR walk.
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| Title "Applesoft's Loaded Dice" | Faces uniform over every long loop; bias appears only in the 202-loop (p=0.10) and in `RND(-K)` misuse (§1) | **WRONG** as a distribution claim | "Applesoft's Stacked Deck" or keep the hook and qualify on slide 2 (§1.3) |
-| Notes: "boot the machine cold, PRINT RND(1), reboot, same number. Do it three times" | Same number only after a true **power cycle**, and only if power-on RAM gives the same `$CD` each time (`$FE`/`$FF` for .973136996). **Ctrl-RESET** keeps the seed, so you get the *next* number (E). **`E000G`** reloads 4 bytes but `$CD` keeps the last `RND`'s byte, giving a different number (E). DOS 3.3 boot (`PR#6`) not tested | **WRONG** for Ctrl-RESET and warm/BASIC restarts; conditional for power cycles | "Power-cycle the machine (not Ctrl-RESET, not PR#6), PRINT RND(1), power-cycle again, same number. Rehearse on the show machine first." |
+| Title "Applesoft's Loaded Dice" (metaphor for a predetermined start) | Start is predetermined per power-on RAM state (§1). Output is not weighted (Appendix A) | **CORRECT** as metaphor | Say once, early, "not weighted, pre-rolled", so no one reads it as a bias claim |
+| Notes: "boot the machine cold, PRINT RND(1), reboot, same number. Do it three times" | Same number after each **power cycle** with the same power-on `$CD` (AppleWin default, MAME: `.973136996`). Ctrl-RESET gives the *next* number; `E000G` gives a different one (E) | **CORRECT** for power cycles; **WRONG** if "reboot" means Ctrl-RESET | "Power-cycle, PRINT RND(1), power-cycle again, same number." |
 
 ### Slide 2: "The Problem"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| `PRINT RND(1)` → `.973136996` | Exactly this value when `$CD` is `$FE` or `$FF` at the first call; the resulting seed is `80 79 1F 81 94`. The 256 values of `$CD` give 181 different first outputs; `$CD=$00` gives .270011996 (E, re-derived today) | **CORRECT** (conditional) | Footnote: "on this machine's power-on RAM; the ROM seeds only 4 of 5 bytes" |
-| Notes: "The amber box is the part that has to land. Slide 4 depends on it." | No amber box on slide 2. This note duplicates slide 3's | n/a (misplaced note) | Move to slide 3 only |
+| `PRINT RND(1)` → `.973136996` | Exact digits reproduced by typing into the ][+ ROM with AppleWin's and MAME's power-on RAM patterns; requires `$CD` ∈ {`$FE`,`$FF`} (§1 Target 1) | **CORRECT** | Optional footnote: "4 bytes from ROM + 1 byte of power-on RAM" |
+| Notes: "The amber box is the part that has to land. Slide 4 depends on it." | No amber box on slide 2; the note duplicates slide 3's | n/a (misplaced) | Keep on slide 3 only |
 
 ### Slide 3: what an RNG is
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "Pseudo-random … The answer becomes the next starting number." | True of Applesoft: `STORE.FAC.AT.YX.ROUNDED` writes the result to `$C9` and returns the same value (a). **Not** true of Integer BASIC: it returns (state before shifting) MOD N, and the next state is that state clocked 17 more times (a) | **CORRECT** for Applesoft; wrong for Integer BASIC | Fine as is if the slide is about Applesoft |
-| "Entropy is the key to sufficient randomness and unpatterned results." | Seed entropy sets the *starting point* only. Applesoft still falls into its loops from any seed, and Integer BASIC is a 15-bit LFSR whatever the seed (E) | **WRONG** (conflates seeding with generator quality) | "Entropy makes the starting point unpredictable. It can't fix a generator that loops." |
+| "Pseudo-random … The answer becomes the next starting number." | True of Applesoft: the result is stored to `$C9` and returned (a). Integer BASIC returns (state) MOD N and advances the state 17 LFSR steps (a) | **CORRECT** for Applesoft | |
+| "Entropy is the key to sufficient randomness and unpatterned results." | Entropy sets the starting point. It doesn't prevent patterns: Applesoft loops from any seed (E) | **WRONG** (conflates the two) | "Entropy makes the starting point unpredictable." |
 
 ### Slide 4: "Integer BASIC, 1977"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "Woz wrote a generator at $EF4E" | `EF4E: 20 15 E7 RND JSR GET16BIT`, entry for token `$2F` (a, 2 dumps) | **CORRECT** | |
-| "Known period with limited range" | Period **32,767** (maximal 15-bit LFSR, x¹⁵+x¹⁴+1) when no key waits intervene. Range 0..N−1 for N>0, −(N−1)..0 for N<0; `RND(0)` → `*** >32767 ERR` (E) | **CORRECT** but unquantified | "Period 32,767; returns 0 to N−1" |
-| "No Floating point" | 16-bit integer arithmetic, `MOD` operator (a) | **CORRECT** | |
-| "Sufficiently random" | Subjective. Measured facts: `RND(6)` bias 1 in 5,461; `RND(20000)` 2:1 range bias (§2) | **UNVERIFIABLE** | "Good enough for games; biased for large N" |
-| "counter at $4E and $4F that goes up while the monitor sits waiting for a keypress. Integer BASIC reads it." | `FD1B: E6 4E INC RNDL`, `FD1F: E6 4F INC RNDH` in the KEYIN wait loop; `EF51: A5 4E`, `EF56: A5 4F` in RND (a). It also **writes it back**: the counter *is* the generator state (`EF60: 85 4F`, `EF6D/EF6F: ROL`) | **CORRECT** (understated) | "…Integer BASIC's RND uses it as its own state." |
-| "Sander-Cederlof, Apple Assembly Line, August 1981." | Citation, not code. Review A confirmed the article (txbobsc `aal8108`) and that it calls `$EF51`, not `$EF4E` | **UNVERIFIABLE** here | |
-| Notes: "$4E/$4F is not a jiffy clock … The Apple II has no timer doing this." | The only writers are the KEYIN wait loop and Integer BASIC `RND`; the count is frozen while a program runs (a) | **CORRECT** | |
+| "Woz wrote a generator at $EF4E" | `EF4E: 20 15 E7 RND JSR GET16BIT` (a, 2 dumps) | **CORRECT** | |
+| "Known period with limited range" | Period 32,767 (15-bit LFSR) between key waits; returns 0..N−1; `RND(0)` → `>32767 ERR` (E) | **CORRECT** | "Period 32,767; 0 to N−1" |
+| "No Floating point" | 16-bit integer `MOD` (a) | **CORRECT** | |
+| "Sufficiently random" | Subjective | **UNVERIFIABLE** | |
+| "counter at $4E and $4F that goes up while the monitor sits waiting for a keypress. Integer BASIC reads it." | `FD1B INC RNDL` / `FD1F INC RNDH` in the wait loop; `EF51 LDA $4E`, `EF56 LDA $4F`; RND also writes it back (a) | **CORRECT** | "…Integer BASIC uses it as its generator state." |
+| "Sander-Cederlof, Apple Assembly Line, August 1981." | Citation; Review A confirmed it (txbobsc `aal8108`, which calls `$EF51`) | **UNVERIFIABLE** here | |
+| Notes: "$4E/$4F is not a jiffy clock … no timer doing this." | Only the KEYIN loop and Integer BASIC RND write it; frozen otherwise (a) | **CORRECT** | |
 
 ### Slide 5: "Built-in Entropy Source"
 
@@ -177,116 +265,123 @@ Captions were paired with images by their positions in `slide5.xml`.
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| Image, caption OrigF8ROM: `fd1b: e6 4e KEYIN inc RNDL` … `fd2e: 60 rts` (9 lines, `IOADR` labels) | All 9 lines byte-identical to AppleWin `Apple2.rom` (a) | **CORRECT** | |
-| Image, caption AutoF8ROM: same loop, `KBD` labels | Byte-identical to `Apple2_Plus.rom` and apple2js `fpbasic.ts` (a) | **CORRECT** | |
-| Image, "Integer BASIC, at $EF4E": `ef4e: 20 15 e7` … `ef7d: 4c 7a e2 jmp MOD` (24 lines) | All 24 lines byte-identical to both Integer BASIC dumps. The comment "uses tken $3f (" is a typo in the source listing, harmless | **CORRECT** | |
-| Image, caption **IIc_16kb**: `cc71: e6 4e inc RNDL ;update seed`, `cc73: d0 1c bne UD2`, `cc75: a5 4f lda RNDH` (cropped) | No //c ROM dump in AppleWin or apple2js. The pattern `E6 4E D0 1C A5 4F` is in **no** //e, ][+ or II image. The enhanced //e has a similar routine at `$C27D` (`E6 4E D0 0A A5 4F E6 4F 45 4F`), with a different branch offset (a) | **UNVERIFIABLE** (the image is also cropped mid-line top and bottom) | Re-crop cleanly; label "//c firmware (per McFadden)" |
-| Image, caption **Unenh_IIe_80col**: `cb15: e6 4e GETKEY inc MON_RNDL` … `cb23: 60 rts` | All 15 bytes present at `$CB15` in **AppleWin `Apple2e.rom` and apple2js `apple2e.ts`** (unenhanced //e); a second loop is at `$C2D5`. The enhanced //e has the same 15 bytes at `$C83B` (a) | **CORRECT** | |
-| "Present in some form in all Apple II ROMs" | `INC $4E` wait loops confirmed in ROM bytes for the II, ][+, unenhanced //e and enhanced //e. //c only via the screenshot. IIc Plus and IIgs not checked | **UNVERIFIABLE** for "all" | "In the II, ][+ and //e ROMs, and the //c firmware" |
-| Notes: "Point at the **bne** going back to KEYIN." | `FD1D: D0 02 BNE KEYIN2` branches **forward**, skipping `INC RNDH` unless RNDL wrapped. The branch back to KEYIN is **`FD24: 10 F5 BPL KEYIN`** (a) | **WRONG** | "Point at the BPL at $FD24 going back to KEYIN." |
+| Image (OrigF8ROM): `fd1b: e6 4e KEYIN inc RNDL` … `fd2e: 60 rts` | 9 of 9 lines byte-identical to `Apple2.rom` (a) | **CORRECT** | |
+| Image (AutoF8ROM): same loop, `KBD` labels | Byte-identical to `Apple2_Plus.rom` and `fpbasic.ts` (a) | **CORRECT** | |
+| Image "Integer BASIC, at $EF4E": `ef4e` … `ef7d: 4c 7a e2 jmp MOD` | 24 of 24 lines byte-identical to both dumps (a) | **CORRECT** | |
+| Image (IIc_16kb): `cc71: e6 4e inc RNDL`, `cc73: d0 1c bne UD2`, `cc75: a5 4f lda RNDH` (cropped) | No //c dump available; pattern absent from every //e, ][+ and II image. The enhanced //e has the same shape at `$C27D` with a different offset (a) | **UNVERIFIABLE** | Re-crop cleanly |
+| Image (Unenh_IIe_80col): `cb15: e6 4e GETKEY inc MON_RNDL` … `cb23: 60 rts` | All 15 bytes at `$CB15` in AppleWin `Apple2e.rom` and apple2js `apple2e.ts` (a) | **CORRECT** | |
+| "Present in some form in all Apple II ROMs" | Confirmed in ROM bytes for the II, ][+, unenhanced //e and enhanced //e; //c via screenshot only; IIc Plus and IIgs unchecked | **UNVERIFIABLE** ("all") | "In the II, ][+ and //e ROMs, and the //c firmware" |
+| Notes: "Point at the **bne** going back to KEYIN." | `FD1D: D0 02 BNE` branches *forward* past `INC RNDH`. The branch back is **`FD24: 10 F5 BPL KEYIN`** (a) | **WRONG** | "Point at the BPL at $FD24 going back to KEYIN." |
 | Notes: "The counter gets bumped before the keyboard is read, every pass. It's a loop count, not a keystroke count." | `INC` at `$FD1B` precedes `BIT KBD` at `$FD21` on every pass (a) | **CORRECT** | |
-| Notes: "Sit there two seconds and it's gone round tens of thousands of times." | 15 cycles per pass (19 on the RNDL wrap), so ≈68,000 counts/s at ≈1.02 MHz (c; clock rate not measured). Two seconds ≈ **136,000 counts**, and the 16-bit counter **wraps about twice**. Applies to the II/][+ loop; the //e and //c loops are longer and unmeasured | **WRONG** (undercounts counts; overstates wraps) | "Sit there two seconds and it has counted about 136,000 times, wrapping its 16 bits twice." |
-| Notes: "the second thing Integer BASIC's RND does is read $4E" | `EF4E JSR GET16BIT`, then `EF51 LDA $4E` (a) | **CORRECT** | |
-| Notes: "The disassembly is Paul Santa-Maria's work, converted by Andy McFadden." | Matches `IntegerBASIC.html` attribution (`PROVENANCE.md`) | **CORRECT** | |
-| Notes: "Woz wrote Integer BASIC with no assembler … only hand-written pages in a binder" | Historical claim; nothing in the ROM or listing bears on it | **UNVERIFIABLE** here | Cite a source (e.g. Woz interview) |
+| Notes: "Sit there two seconds and it's gone round tens of thousands of times." | ≈68,000 counts/s (c), so two seconds ≈ **136,000 counts**, and the 16-bit counter **wraps about twice** | **WRONG** | "Two seconds is about 136,000 counts; the 16-bit counter wraps twice." |
+| Notes: "the second thing Integer BASIC's RND does is read $4E" | `JSR GET16BIT`, then `LDA $4E` (a) | **CORRECT** | |
+| Notes: "The disassembly is Paul Santa-Maria's work, converted by Andy McFadden." | Matches `IntegerBASIC.html` attribution | **CORRECT** | |
+| Notes: "Woz wrote Integer BASIC with no assembler … hand-written pages in a binder" | Historical; nothing in the code bears on it | **UNVERIFIABLE** here | Cite a source |
 
 ### Slide 6: "Applesoft, 1978"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "Applesoft, 1978" over a listing at `$EFAE` | `$EFAE` is **Applesoft II in the Apple ][+ ROM** (1979); the //e ROMs are identical there. The *algorithm and constants* date from 1978: Microsoft `m6502.asm` (git date 1978-07-27) has the same RND in octal (a) | **WRONG** (the date and the address belong to different artifacts) | "Applesoft II (1978 code), as burned into the ][+ ROM" |
-| "Applesoft relies on different seed. However, the seed for Integer BASIC remains." | Applesoft `RND` never references `$4E/$4F`; the Autostart KEYIN still increments them; identical `RND(1)` output with counter `$0041` vs `$3E97` (a)+(E) | **CORRECT** | |
-| "Takes the seed at $C9, multiplies, adds, swaps two bytes around, forces the result under 1, writes it back to $C9." | Right in outline. Precisely: 5-byte seed `$C9–$CD`; ×**11879546.40625** (the 4-byte constant plus a stray 5th byte `$68`); **+3.93×10⁻⁸, which changes the stored seed in only 5 of 57,021 steps**; swaps **FAC+1 ↔ FAC+4** (top and bottom mantissa bytes); clears the sign; old exponent becomes the guard byte; exponent `$80`; normalize; round; store (a)+(E) | **CORRECT** (simplified) | "…multiplies by a constant that's missing a byte, adds a number too small to matter, swaps the top and bottom bytes…" |
-| Image: `efae: 20 82 eb RND jsr SIGN` … `efe7: 4c 2b eb jmp STORE_FAC_AT_YX_ROUNDED` | All 28 lines byte-identical to both ][+ dumps (and the //e images) (a) | **CORRECT** | Add credit: "S-C DocuMentor (Sander-Cederlof) via 6502disassembly.com (McFadden)" |
-| Image comment "<<< this does nothing, due to small exponent >>>" | S-C's annotation, not Microsoft's. Nearly true: without the add, the sequence diverges at call 3,886 (E) | **CORRECT** in practice, overstated literally | "effectively lost to precision" |
-| Image comments "very poor RND algorithm", "to supposedly make it more random" | S-C DocuMentor annotations, not Microsoft source (Microsoft's comment says the swap gives "A RANDOM CHANCE OF GETTING A NUMBER LESS THAN OR GREATER THAN .5") (a) | **CORRECT** as S-C quotes; unattributed | Attribute to Sander-Cederlof |
-| Notes: "This is the whole thing. **Twenty-six** instructions." | **28** instructions from `$EFAE` through `JMP` at `$EFE7` (py65 disassembly of the ROM). `RND(1)` executes all 28; `RND(-n)` executes 17; `RND(0)` 8 plus the shared `RTS`. A full `RND(1)` call runs ≈953 instructions including the FP routines (E) | **WRONG** | "Twenty-eight instructions, plus about 900 more inside the floating-point routines it calls." |
-| Notes: "the seed comes from $C9, which got a fixed value out of ROM at boot" | COLD.START copies only **4 of 5** seed bytes: the loop `F150: A2 1C … F15A: D0 F6` copies `$F10B–$F126` to `$B1–$CC`, so `80 4F C7 52` reach `$C9–$CC`. `$F127` (`$58`) never reaches `$CD`, which keeps whatever RAM held (a) | **WRONG** (partly) | "…which got four fixed bytes out of ROM at boot, and one byte of whatever was lying in RAM." |
-| Notes: "the answer goes back to $C9. Nothing else feeds it." | No instruction in `$D000–$FFFF` writes `$C9–$CD` directly (4 byte-pattern hits all fall mid-instruction); `NEW`, `CLEAR`, `RUN` leave the seed unchanged (E). Only COLD.START and `RND` write it. `RND(-n)` feeds in its argument | **CORRECT** for `RND(+)` | |
-| Notes: "McFadden's disassembly at 6502disassembly.com" | That listing is McFadden's SourceGen conversion of **Sander-Cederlof's S-C DocuMentor**; the critical comments are S-C's | **CORRECT** but incomplete | Credit both |
-| Alt text `/home/claude/rnd_listing.png` (also `keyin.png`, `intbasic_rnd.png` on slide 5) | Build paths leaked into image descriptions | n/a (hygiene) | Real descriptions |
+| "Applesoft, 1978" over a listing at `$EFAE` | `$EFAE` is Applesoft II **in the ][+ ROM** (1979; identical in the //e ROMs). The algorithm and constants are in Microsoft's 1978 source (a) | **WRONG** (the date and the address belong to different artifacts) | "Applesoft II (1978 code), ][+ ROM" |
+| "Applesoft relies on different seed. However, the seed for Integer BASIC remains." | `RND` never touches `$4E/$4F`; Autostart KEYIN still counts (a)+(E) | **CORRECT** | |
+| "Takes the seed at $C9, multiplies, adds, swaps two bytes around, forces the result under 1, writes it back to $C9." | Seed `$C9–$CD`; × 11879546.40625 (constant missing a byte); add of 3.93×10⁻⁸ almost always lost; swaps FAC+1 ↔ FAC+4; exponent `$80`; normalize, round, store (a)+(E) | **CORRECT** (simplified) | |
+| Image `efae: 20 82 eb` … `efe7: 4c 2b eb` (28 lines) | All 28 lines byte-identical to both ][+ dumps (a) | **CORRECT** | Credit: "S-C DocuMentor (Sander-Cederlof) via 6502disassembly.com (McFadden)" |
+| Image comments "very poor RND algorithm", "this does nothing, due to small exponent" | S-C's annotations, not Microsoft's. "Does nothing" is nearly true: the sequence without the add diverges at call 3,886 (E) | **CORRECT** as S-C quotes | Attribute them |
+| Notes: "This is the whole thing. **Twenty-six** instructions." | **28** (Target 4) | **WRONG** | "Twenty-eight instructions, plus about 900 in the FP routines it calls." |
+| Notes: "the seed comes from $C9, which got a fixed value out of ROM at boot" | 4 of 5 bytes; `$CD` is power-on RAM (Target 5) | **WRONG** (partly) | "…four fixed bytes from ROM and one byte of leftover RAM." |
+| Notes: "the answer goes back to $C9. Nothing else feeds it." | Only COLD.START and `RND` write `$C9–$CD`; NEW/CLEAR/RUN don't (a)+(E). `RND(-n)` feeds in its argument | **CORRECT** | |
+| Notes: "McFadden's disassembly at 6502disassembly.com" | McFadden's SourceGen conversion of S-C DocuMentor | **CORRECT** (incomplete) | Credit both |
+| Alt text `/home/claude/rnd_listing.png` (also `keyin.png`, `intbasic_rnd.png` on slide 5) | Build paths leaked | n/a (hygiene) | Real descriptions |
 
 ### Slide 7: "Applesoft Manual, 1978"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "RND (aexpr) Returns a random real number ≥ 0 and < 1." | `RND(+)` outputs lie in (0,1): 0 of 128,550 ROM outputs were ≥ 1 (E). `RND(-K)` returns ≈3×10⁻⁸ for small integers | **CORRECT** | |
-| "If aexpr > 0, RND(aexpr) generates a new random number each time it is used." | `SIGN` → +1 path multiplies/swaps/stores (a). The argument's value is ignored: `RND(.001)`, `RND(1)` and `RND(99)` are identical (a) | **CORRECT** | |
-| "If aexpr < 0 … generates the same random number each time it is used with the same aexpr … subsequent … positive arguments will follow the same sequence each time." | `BMI` at `$EFB2` shuffles the argument's own bytes into the seed; same K, same sequence (E, Demo 3) | **CORRECT** | |
-| "A different random sequence is initialized by each different negative argument." | K = 1..65,535 give **65,535 distinct seeds** (E). But those sequences merge into at most five loops, and the "random number" each `RND(-K)` returns is ≈3×10⁻⁸ (E) | **CORRECT** at the start; misleading long-run | |
-| "If aexpr is zero, RND(aexpr) returns the most recent previous random number generated (CLEAR and NEW do not affect this)." | `EFBC: F0 E7 BEQ RTS.19` returns the loaded seed unchanged (a). `NEW`, `CLEAR`, `RUN` leave `$C9–$CD` unchanged (E). Caveat: right after power-on it returns the ROM seed, which was never "generated" | **CORRECT** | |
-| Date "1978" | The Aug 1978 *Applesoft II Reference Manual* (A2L0006X) RND entry reads "X<=0 starts a new sequence of random numbers using X" (`PROVENANCE.md`). That is different wording, and it contradicts this slide's `RND(0)` text. So these scans are from a different edition. archive.org full-text search for "permanent random number table" found nothing (OCR-limited) | **UNVERIFIABLE** (probably wrong edition/date) | Identify the edition and part number |
-| Notes (identical to slide 6's: "Twenty-six instructions…") | Copy-pasted from slide 6 | **WRONG** (misplaced; carries the 26 error) | Replace with notes about the manual text |
+| "RND (aexpr) Returns a random real number ≥ 0 and < 1." | `RND(+)` outputs lie in (0,1): none ≥ 1 in 128,550 ROM outputs (E) | **CORRECT** | |
+| "If aexpr > 0 … new random number each time" | Positive path; argument value ignored (a) | **CORRECT** | |
+| "If aexpr < 0 … same random number … subsequent positive arguments follow the same sequence" | Argument bytes become the seed; same K, same sequence (E) | **CORRECT** | |
+| "A different random sequence is initialized by each different negative argument." | K = 1..65,535 give 65,535 distinct seeds (E) | **CORRECT** | |
+| "If aexpr is zero, returns the most recent previous random number generated (CLEAR and NEW do not affect this)." | `EFBC: BEQ RTS.19` returns the seed unchanged; NEW/CLEAR/RUN leave it (a)+(E) | **CORRECT** | |
+| Date "1978" | The Aug 1978 *Applesoft II Reference Manual* (A2L0006X) has different RND wording ("X<=0 starts a new sequence…"); these scans are another edition | **UNVERIFIABLE** (probably a later edition) | Name the edition |
+| Notes (copy of slide 6's, including "Twenty-six instructions") | Misplaced, and carries the Target 4 error | **WRONG** | Notes about the manual text |
 
 ### Slide 8: "Sources"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "Kaner & Vokey, 1982. First published account." | Manuscript © 1982; **published in *MICRO* No. 72, June 1984**, pp. 26–35 (LITERATURE [A3], C8). Sparks, "RND is Fatally Flawed", *Call-A.P.P.L.E.* Jan 1983 was in print first | **WRONG** ("first published") | "Kaner & Vokey, MICRO, June 1984 (written 1982)" |
-| "Call A.P.P.L.E., Jan 1983, 'RND is Fatally Flawed.'" | Sparks, D., *Call-A.P.P.L.E.* 6, pp. 29–34 (LITERATURE, Crossref citation) | **CORRECT** | Add author and pages |
-| "Sander-Cederlof, AAL May 1984. Found the startup bug. The seed copy is off by one." | The bug is real: `LDX #$1C` loop copies 4 of 5 bytes; also present in Microsoft's source (line 6733, `LDXI RNDX+4-CHRGET`) (a). Who found it first is not a code question | **CORRECT** (bug); priority **UNVERIFIABLE** | "Documented the startup bug" |
-| "Aldridge 1987, Gleason 1988. Behavior Research Methods. ERIC EJ372427." / "Empson, GS WorldView 1999. Built Moore's LFSR" | Citations; outside the code. One ERIC number for two papers (Review A §10) | **UNVERIFIABLE** here | See `research/LITERATURE.md` |
-| Notes: "The 202 figure is measured, from the paper, on real Applesoft." | The figure **is not on any slide**. It exists: Kaner & Vokey, "repeating itself every 202 numbers", entered between the 10,000th and 20,000th number. On the ROM, a cold start with `$CD=$58` enters a 202-loop after 15,382 calls, inside that window; 23% of `$CD` values reach it (E). The printed MICRO OCR lacks the passage; check the scan | **CORRECT** (but orphaned) | Put "202" on the slide: "a loop of 202 numbers" |
+| "Kaner & Vokey, 1982. First published account." | Manuscript © 1982, **published *MICRO* June 1984** (LITERATURE [A3], C8). Sparks, *Call-A.P.P.L.E.* Jan 1983, was in print first | **WRONG** ("first published") | "Kaner & Vokey, MICRO, June 1984 (written 1982)" |
+| "Call A.P.P.L.E., Jan 1983, 'RND is Fatally Flawed.'" | Sparks, D., *Call-A.P.P.L.E.* 6, pp. 29–34 | **CORRECT** | Add author and pages |
+| "Sander-Cederlof, AAL May 1984. Found the startup bug. The seed copy is off by one." | Loop count `$1C` copies 28 of 29 bytes; `$F127` never reaches `$CD`; bug inherited from Microsoft line 6733 (Target 5) | **CORRECT** | Precise wording in Target 5 |
+| "Aldridge 1987, Gleason 1988 … ERIC EJ372427" / "Empson, GS WorldView 1999" | Citations, outside the code | **UNVERIFIABLE** here | See `research/LITERATURE.md` |
+| Notes: "The 202 figure is measured, from the paper, on real Applesoft." | No slide shows 202. The figure is real: Kaner & Vokey report a loop "repeating itself every 202 numbers", and on the ROM `$CD=$58` enters a 202-loop after 15,382 calls; 23% of `$CD` values reach it (E) | **CORRECT** (orphaned) | Put it on the slide or cut the note |
 
 ### Slide 9: "Two Part Solution"
 
-`LC_Loader.bin` and `Patch_lc.bin` aren't in the workspace, so no patch behaviour can be
-verified. Only the addresses and constraints can.
-
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| "Enables language card write mode while keeping ROM readable" | Soft-switch behaviour; not in the audited ROMs and loader not available | **UNVERIFIABLE** | Name the switches used (e.g. `$C081` ×2) |
-| "Copies $D000-$FFFF (all of Applesoft and the monitor ROM)" | ][+ ROM image: Applesoft `$D000–$F7FF`, Autostart monitor `$F800–$FFFF`, RESET vector `$FA62` (a). On an original II the same range is Integer BASIC | **CORRECT** (for a ][+ / //e) | |
-| "Writes the patch code into the LC at $F5CB (may impact HFIND, supposedly unused by AppleSoft.)" | S-C labels `$F5CB` HFIND, "not called by any Applesoft routine". The ROM scan finds **no direct JSR/JMP to $F5CB anywhere in $D000–$FFFF** (a). Available room `$F5CB–$F5FF` = **53 bytes**. `$F600` is an `RTS` (`60`) that **HLIN branches to** (`F59C: F0 62 BEQ $F600`), and DRAW starts at `$F601` (a). External machine-language callers are not ruled out | **CORRECT** that Applesoft doesn't call it; "may impact"/"supposedly" is weaker than the evidence | "Patch (≤53 bytes) overwrites HFIND at $F5CB–$F5FF, which nothing in the ROM calls; the shared RTS at $F600 is untouched." |
-| "Writes JMP $F5CB at $EFAE in the LC copy" | `$EFAE` is RND's entry (dispatch table `$D092` = `AE EF`). The 3-byte JMP replaces exactly `20 82 EB` (`JSR SIGN`), so the patch must call `SIGN` itself (a) | **CORRECT** | |
-| "1. Preserves negative and zero RND() functionality while relying on the KEYIN counter present in the ROM." | Patch unavailable. What the ROM requires: `RND(0)` must return `$C9–$CD` unchanged; `RND(-K)` must seed deterministically from K; a counter value of **0** used as a negative seed would go down the `RND(0)` path, because `SIGN` returns 0 (a). The counter is RAM `$4E/$4F`, bumped by ROM code | **UNVERIFIABLE** | Show the patch listing and a before/after test |
+| "Enables language card write mode while keeping ROM readable" | Loader not available | **UNVERIFIABLE** | Name the switches (e.g. `$C081` ×2) |
+| "Copies $D000-$FFFF (all of Applesoft and the monitor ROM)" | ][+ image: Applesoft `$D000–$F7FF`, monitor `$F800–$FFFF` (a) | **CORRECT** (][+ / //e) | |
+| "Writes the patch code into the LC at $F5CB (may impact HFIND, supposedly unused by AppleSoft.)" | Unused by Applesoft: S-C, McFadden and an independent ROM scan agree. 53 bytes available; `$F600` RTS shared with HLIN; DRAW at `$F601` (Target 6) | **CORRECT**. The hedge is unnecessary; the size limit is the real risk | Target 6 corrected text |
+| "Writes JMP $F5CB at $EFAE in the LC copy" | `$EFAE` = RND entry (`$D092` = `AE EF`); JMP replaces `JSR SIGN` exactly (a) | **CORRECT** | |
+| "1. Preserves negative and zero RND() functionality while relying on the KEYIN counter present in the ROM." | Patch binary not available; required behaviour listed in Target 6 | **UNVERIFIABLE** | Show the patch listing |
 | "Two Part Solution" with only item "1." | | n/a (hygiene) | Number both parts |
 
 ### Slide 10: "Try it yourself"
 
 | Claim | Verified source says | Verdict | Corrected text |
 |---|---|---|---|
-| Notes: "does the C64 have this too (yes, same Microsoft code, but Commodore wired RND(0) to hardware timers and gave people TI)" | Microsoft's source: the Commodore build (`REALIO=3`) makes `RND(0)` load VIA timer bytes (`CQHTIM`, lines 6357–6370); the Apple build doesn't (a). That is the **PET** path; the C64 ROM itself was not examined | **CORRECT** for PET; **UNVERIFIABLE** for C64 specifics | |
-| Notes: "Why not replace the generator (speed, no space, and RND(-n) has to keep working)" | One `RND(1)` ≈ 953 instructions / 3,238 cycles ≈ 3 ms (E); the patch site holds 53 bytes (a) | **CORRECT** | Numbers available if asked |
-| Notes: "What's at $F5CB (HFIND, answer it straight)" | HFIND (a) | **CORRECT** | |
+| Notes: "does the C64 have this too (yes, same Microsoft code, but Commodore wired RND(0) to hardware timers and gave people TI)" | Microsoft source: the Commodore build's `RND(0)` loads VIA timer bytes (`CQHTIM`, lines 6357–6370); Apple's doesn't (a). The C64 ROM itself was not examined | **CORRECT** (PET path); C64 specifics unverified | |
+| Notes: "Why not replace the generator (speed, no space, and RND(-n) has to keep working)" | `RND(1)` ≈ 953 instructions ≈ 3 ms (E); patch site 53 bytes (a) | **CORRECT** | |
+| Notes: "What's at $F5CB (HFIND, answer it straight)" | HFIND; unused by Applesoft (Target 6) | **CORRECT** | |
 
 ---
 
 ## 4. Tally and priorities
 
-Counted by each row's leading verdict in §3 (57 rows). A few CORRECT rows also carry an
-unverifiable sub-point: the AAL priority claim and the C64 specifics.
+Counted by each row's leading verdict in §3: **36 CORRECT, 8 WRONG, 9 UNVERIFIABLE, 3 n/a**
+(56 rows).
 
-| Verdict | Count |
-|---|---|
-| CORRECT (including conditional/understated) | 35 |
-| WRONG | 10 |
-| UNVERIFIABLE | 9 |
-| n/a (hygiene/misplaced notes) | 3 |
-
-**Fix before presenting, in order:**
-1. **Title/thesis.** "Loaded" isn't supported; "scripted / stacked" is (§1).
-2. **Slide 6 notes:** 26 → 28 instructions, and "fixed value out of ROM" → 4 fixed bytes plus one RAM byte. The same error sits in slide 7's notes.
-3. **Slide 1 notes demo:** a real power cycle, not Ctrl-RESET (which gives the next number).
-4. **Slide 5 notes:** BPL at `$FD24`, not BNE. Two seconds ≈ 136,000 counts, two wraps.
+**Fix before presenting:**
+1. **Slide 6 notes** (and the copy in slide 7's): "Twenty-six" → 28; "fixed value out of ROM" →
+   four bytes plus one byte of leftover RAM.
+2. **Slide 2 / slide 1 demo:** power-cycle, don't Ctrl-RESET; rehearse on the stage machine.
+   Optional `PRINT PEEK(205)` reveal.
+3. **Slide 9:** drop "supposedly"; state the ≤ 53-byte limit and that `$F600` is left intact;
+   bring the patch listing.
+4. **Slide 5 notes:** BPL at `$FD24`, not BNE; two seconds ≈ 136,000 counts.
 5. **Slide 6 header:** "1978" vs the ][+ ROM address.
-6. **Slide 8:** Kaner & Vokey published 1984, not the first publication. Put the 202-loop on the slide; it's the strongest number the deck has.
-7. **Slide 3:** entropy ≠ unpatterned output.
+6. **Slide 8:** "first published" (Kaner & Vokey published 1984); the orphaned 202 note.
+7. **Slide 3:** entropy sets the start, not the pattern.
 
-**Open:** //c ROM bytes for `$CC71`; the manual edition on slide 7; `Patch_lc.bin`
-contents and length (must be ≤ 53 bytes); DOS 3.3 boot effect on `$C9–$CD`; real-hardware
-power-on value of `$CD`.
+**Open:** real-hardware power-on value of `$CD`; //e reset path and DOS 3.3 boot effects on
+`$C9–$CD`; `Patch_lc.bin`/`LC_Loader.bin` contents; external callers of HFIND; //c bytes at
+`$CC71`; the edition of the manual on slide 7.
+
+---
+
+## Appendix A: output distribution (context for "uniform")
+
+The deck does not claim bias, but the audience may ask. Die faces `INT(RND(1)*6)+1`, computed
+by the ROM's own `RND` → `FMULT` → `INT`, pass χ² for single faces, consecutive pairs and
+triples over every long cycle. For the `.973136996` machine's 37,758-number loop: faces
+6377 6211 6228 6314 6285 6343, χ² 3.34, p=0.65; pairs p=0.76; triples p=0.31. The ROM face
+never differed from exact ⌊6x⌋+1 in 128,550 outputs. Two genuinely lopsided cases are
+misuse or loop artefacts, not weighting:
+* Inside the 202-number loop, face 4 appears 22.3% of the time (p=0.10).
+* `INT(RND(-K)*6)+1` = 1 for all K from 1 to 65,535, because `RND(-K)` returns ≈3×10⁻⁸.
 
 ## Reproduce
 
 ```sh
 cd source/tools
-../../.venv/bin/python verify.py                         # listings + demos, seconds
-../../.venv/bin/python deck_audit.py rom lattice intbasic   # ~1 s
-../../.venv/bin/python deck_audit.py negsweep            # ~45 s
-../../.venv/bin/python deck_audit.py cycle-cdff cycle-neg2 cycle-cd58   # ~2.5 min
-../../.venv/bin/python -c "import deck_audit as d; d.cycle('A8', d.cold(0xA8)); d.cycle('BC', d.cold(0xBC))"
+../../.venv/bin/python verify.py                                  # listings + demos
+../../.venv/bin/python deck_audit.py rom emuram hfind              # targets 1–6, seconds
+../../.venv/bin/python deck_audit.py negsweep cycle-cdff cycle-neg2 cycle-cd58   # appendix, ~4 min
 ```
 
-//e checks used AppleWin `Apple2e.rom` (SHA-1 `61fa9254…d747`), `Apple2e_Enhanced.rom`
-(`b8ea90ab…198b`) and apple2js `apple2e.ts`, downloaded to `/tmp/a2rng-roms`.
+External sources fetched 2026-09-12:
+* AppleWin `source/Core.cpp`, `source/Memory.cpp` (master)
+* MAME `src/mame/apple/apple2.cpp` (master)
+* S-C DocuMentor `F5BA.html` and `symboltable.html` (txbobsc.com)
+* McFadden `a2-rom/Applesoft.html`
+* AppleWin `Apple2e.rom` / `Apple2e_Enhanced.rom` and apple2js `apple2e.ts`

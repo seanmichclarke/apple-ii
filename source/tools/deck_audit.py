@@ -199,8 +199,50 @@ def lattice():
           f'max relative deviation {max(abs(c - M/6) for c in cnt)/(M/6):.2e}')
 
 
+def emuram():
+    """Type PRINT PEEK(205) / PRINT RND(1) after power-on with emulators' RAM fill rules.
+    AppleWin: source/Core.cpp g_nMemoryClearType = MIP_FF_FF_00_00; Memory.cpp sets offsets 0,1 of every 4 to $FF.
+    MAME: src/mame/apple/apple2.cpp fills adr with 0 and adr+1 with $FF, step 2."""
+    fills = [('AppleWin default MIP_FF_FF_00_00', lambda x: 0xFF if x % 4 in (0, 1) else 0),
+             ('MAME apple2 (even 00, odd FF)', lambda x: 0xFF if x % 2 else 0),
+             ('all $00', lambda x: 0), ('all $FF', lambda x: 0xFF)]
+    for label, fill in fills:
+        a = Apple('Apple2_Plus.rom', ram_fill=fill)
+        assert a.run('') == 'input-exhausted'
+        n = len(a.out)
+        a.run('PRINT PEEK(205)\rPRINT RND(1)\rPRINT RND(1)\r')
+        lines = [l.lstrip(']') for l in ''.join(a.out[n:]).split('\r') if l and not l.lstrip(']').startswith('PRINT')]
+        print(f'emuram: {label}: PEEK(205), RND(1), RND(1) = {lines}')
+
+
+def hfind():
+    """References into HFIND ($F5CB-$F600) from instruction-synced code anywhere in $D000-$FFFF."""
+    a = Apple('Apple2_Plus.rom'); m = a.mem; d = Disassembler(a.mpu)
+    bound, sweeps = Counter(), 0
+    for start in range(0xD000, 0xD040):
+        pc = start; sweeps += 1
+        while pc < 0xFFFA:
+            bound[pc] += 1; pc += d.instruction_at(pc)[0]
+    refs = []
+    for p in range(0xD000, 0xFFFA):
+        if bound[p] < sweeps * 0.9:
+            continue
+        op = m[p]
+        if op in (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0):
+            off = m[p + 1]; t = p + 2 + (off - 256 if off > 127 else off)
+        elif op in (0x20, 0x4C, 0x6C, 0xAD, 0xBD, 0xB9):
+            t = m[p + 1] | m[p + 2] << 8
+        else:
+            continue
+        if 0xF5CB <= t <= 0xF600 and not 0xF5CB <= p <= 0xF600:
+            refs.append(f'${p:04X} {d.instruction_at(p)[1]}')
+    pairs = [f'${p:04X}' for p in range(0xD000, 0xFFFF) if (m[p], m[p + 1]) in ((0xCB, 0xF5), (0xCA, 0xF5))]
+    print(f'hfind: external code refs into $F5CB-$F600: {refs}; address-table pairs CB F5/CA F5: {pairs or "none"}')
+    print(f'hfind: bytes $F5B0-$F5CA (BVC always + MSKTBL/CON_1C/COSINE_TABLE): {bytes(m[0xF5B0:0xF5CB]).hex(" ")}')
+
+
 if __name__ == '__main__':
-    todo = sys.argv[1:] or ['rom', 'lattice', 'intbasic', 'negsweep', 'cycle-cdff', 'cycle-neg2', 'cycle-cd58']
+    todo = sys.argv[1:] or ['rom', 'emuram', 'hfind', 'lattice', 'intbasic', 'negsweep', 'cycle-cdff', 'cycle-neg2', 'cycle-cd58']
     for t in todo:
         if t == 'cycle-cdff':
             cycle('cold start $CD=$FF (the .973136996 machine)', cold(0xFF))

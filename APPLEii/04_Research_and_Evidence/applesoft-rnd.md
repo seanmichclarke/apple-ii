@@ -233,11 +233,6 @@ distinct 5-value sequences.
   power-on value of `$CD`**. What real DRAM holds there at power-on was **not measured**.
   An emulator that zeroes RAM will always show the `$00` row. **(E)** for the
   dependency; the real-hardware distribution is unknown.
-* **AppleWin and MAME show the `$FF` row.** Their power-on RAM fills (AppleWin default
-  `MIP_FF_FF_00_00`; MAME even `$00` / odd `$FF`) put `$FF` at `$CD`. Typed into the ][+ ROM
-  with those fills, `PRINT RND(1)` gives `.973136996`. Only `$FE` and `$FF` produce that
-  value. **(a)** for the fill rules (emulator source), **(E)** for the output
-  (`tools/deck_audit.py emuram`).
 * **Ctrl-RESET does not touch the seed.** Autostart warm-starts BASIC through `SOFTEV =
   $E003`. The seed was `7E 0F 1C 43 0E` before the reset and after it. **(E)**
 * **`E000G` from the monitor (BASIC cold start)** reloads four bytes and leaves `$CD`
@@ -258,26 +253,9 @@ against all earlier states.
 | `RND(-12345)` | 26,120 | **37,758** |
 | `RND(-54321)` | 1,383 | **32,366** |
 
-All six seeds tested fell into one of two cycles, of 37,758 and 32,366 states. The state
-space is roughly 2³² packed values. **(E)**
-
-**Update, 2026-09-12.** Those six seeds were not representative. The research agent's
-exhaustive sweep over all 256 cold-start values of `$CD`
-(`research/tools/cd_sweep_results.jsonl`, `research/LITERATURE.md` C1/Q5b) found **five**
-cycles:
-
-| Cycle length | `$CD` values leading to it | Example `$CD` (calls before entering) |
-|---|---|---|
-| 37,758 | 110 of 256 (43.0%) | `$00` (19,263), `$FF` (6,818) |
-| 32,366 | 78 (30.5%) | `$18` (15,020) |
-| **202** | **59 (23.0%)** | **`$58`, the byte the ROM meant to copy (15,382)**, `$7A` (12,155) |
-| 4,082 | 5 (2.0%) | `$BC` (12,930) |
-| 12,559 | 4 (1.6%) | `$A8` (2,566) |
-
-`tools/deck_audit.py` independently re-derived the 37,758 (`$FF`), 32,366 (`RND(-2)`),
-202 (`$58`), 12,559 (`$A8`) and 4,082 (`$BC`) rows on the ROM. The 202 loop matches
-Kaner & Vokey's published "repeating itself every 202 numbers" (LITERATURE [A3]). **(E)**
-Reseed arguments were not swept for their cycles, so shorter loops may exist.
+All six seeds tested fell into one of just two cycles, of 37,758 and 32,366 states. The
+state space is roughly 2³² packed values. The run is not exhaustive: other seeds may
+reach other cycles. **(E)**
 
 ### 5.3 Bit-level structure
 
@@ -486,7 +464,6 @@ Their full commented text is in S-C DocuMentor `S.E7A0` / `S.E913`, and in McFad
 | "Addend 3.93×10⁻⁸ is lost to precision (changed 5 of 57,021 steps)" | "the addend does nothing" |
 | "Cold start copies only 4 of 5 seed bytes; `$CD` is leftover RAM" | "every Apple II gives the identical sequence" (unqualified) |
 | "Ctrl-RESET preserves the seed" | "RESET reseeds RND" |
-| "Observed cycles: 37,758, 32,366, 12,559, 4,082 and 202 (23% of power-on `$CD` values reach the 202 loop)" | "period 2³²" or any period derived from LCG theory |
-| "Dice faces from `INT(RND(1)*6)+1` are statistically uniform in every long cycle; see `deck-code-audit.md`" | "Applesoft's dice are loaded" as a distribution claim |
+| "Observed cycles: 37,758 and 32,366" | "period 2³²" or any period derived from LCG theory |
 | "Fraction bit 25 is set ≈99.75% of the time" | "low-order bits are serially correlated" (not shown by these data) |
 | "Applesoft RND never reads `$4E/$4F`" | "Applesoft seeds from keyboard timing" |
