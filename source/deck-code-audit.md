@@ -39,12 +39,11 @@ long-run distribution, not a sample estimate. All numbers **(E)**, ROM-computed:
 |---|---|---|---|---|
 | cold `$CD=$FF`, the .973136996 machine (37,758) | 6377 6211 6228 6314 6285 6343 | 3.34, p=0.65 | 28.94, p=0.76 | 224.7, p=0.31 |
 | `RND(-2)` (32,366) | 5336 5313 5349 5487 5458 5423 | 4.73, p=0.45 | 44.18, p=0.14 | 231.0, p=0.22 |
-| cold `$CD=$A8` (12,559) | 2126 2097 2097 2033 2134 2072 | 3.27, p=0.66 | 32.32, p=0.59 | 201.7 |
-| cold `$CD=$BC` (4,082) | 707 681 708 650 646 690 | 5.39, p=0.37 | 37.77, p=0.34 | 194.9 |
+| cold `$CD=$A8` (12,559) | 2126 2097 2097 2033 2134 2072 | 3.27, p=0.66 | 32.32, p=0.60 | 201.7, p=0.73 |
+| cold `$CD=$BC` (4,082) | 707 681 708 650 646 690 | 5.39, p=0.37 | 37.77, p=0.34 | 194.9, p=0.83 |
 | cold `$CD=$58` (**202**) | 40 29 31 45 23 34 | 9.25, p=0.10 | n/a | n/a |
 
-(5% critical values: 11.07 / 49.80 / ≈250. p-values for the `$A8`/`$BC` pair rows are
-approximate.)
+(5% critical values: 11.07 / 49.80 / ≈250. p-values from the χ² survival function.)
 
 In the four long loops, single faces, consecutive pairs and triples are all consistent with
 a fair die. Over the .973136996 machine's 37,758-roll loop, the largest deviation of any face
@@ -255,11 +254,15 @@ verified. Only the addresses and constraints can.
 
 ## 4. Tally and priorities
 
+Counted by each row's leading verdict in §3 (57 rows). A few CORRECT rows also carry an
+unverifiable sub-point: the AAL priority claim and the C64 specifics.
+
 | Verdict | Count |
 |---|---|
 | CORRECT (including conditional/understated) | 35 |
 | WRONG | 10 |
-| UNVERIFIABLE | 13 |
+| UNVERIFIABLE | 9 |
+| n/a (hygiene/misplaced notes) | 3 |
 
 **Fix before presenting, in order:**
 1. **Title/thesis.** "Loaded" isn't supported; "scripted / stacked" is (§1).
