@@ -425,7 +425,7 @@ B('cols', 'Backup: Commodore, same generator, different integration', """
 The correction to "Commodore wired RND(0) to timers": the timer code is in Microsoft's own source for the Commodore target, and it shipped in the first PET ROM in 1977. Commodore carried it to the C64, where it goes through the KERNAL.
 """, cols=[('Same', ['Microsoft’s generator and constants', 'Seed-copy bug in every Microsoft 6502 BASIC']),
            ('Different', ['Microsoft’s Commodore build: RND(0) reads hardware timers (PET, 1977)',
-                          'A TI clock variable', 'Idiom: `RND(−TI)`'])],
+                          'A TI clock variable', 'Idiom: RND(−TI)'])],
   callout='Commodore got the platform integration from Microsoft. Apple did its own, and skipped RND.',
   source='Microsoft m6502.asm (IFE REALIO-3, TIME==1); Steil, msbasic and c64ref'),
 
@@ -609,12 +609,19 @@ def L_split(sp, badge):
     return out
 
 
+def wrapped(t, width_in, size):
+    """Rough line count for Arial at `size` points in a box `width_in` wide."""
+    per_line = max(10, int(width_in / (size * 0.52 / 72)))
+    return max(1, -(-len(t) // per_line))
+
+
 def side_panels(x, y, w, side, maxh):
     out = []
     for item in side:
         head, lines = item[0], item[1]
         accent = item[2] if len(item) > 2 else GREEN
-        h = 0.62 + 0.3 * len(lines)
+        tw = w - 0.45
+        h = 0.45 + wrapped(head, tw, 15) * 0.27 + sum(wrapped(t, tw, 14) * 0.24 + 0.05 for t in lines)
         out.append(rect(x, y, w, h))
         paras = [P(head, 15, accent, True, after=6)] + [P(t, 14, TEXT, after=3) for t in lines]
         out.append(text(x + 0.25, y + 0.18, w - 0.4, h - 0.25, paras))
