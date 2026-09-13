@@ -9,7 +9,10 @@ Davis's II+ disassemblies. `tools/verify.py` re-checks the bytes.
 
 Scope: Apple II (original monitor) and Apple ][+ (Autostart monitor), where `RDKEY` and
 `KEYIN` are byte-identical. **The //e is different.** Its `KEYIN` at `$FD1B` begins
-`A0 06 LDY #6` (McFadden `Unenh_IIe_F8ROM`) and was not analyzed here.
+`A0 06 LDY #6` (McFadden `Unenh_IIe_F8ROM`) and was not analyzed here. The //e still
+bumps `$4E/$4F` in its own firmware wait loops. Byte patterns `E6 4E D0 … E6 4F`/`A5 4F`
+appear at `$C2D5` and `$CB15` in the unenhanced //e and at `$C27D` and `$C83B` in the
+enhanced //e (AppleWin images, `deck-code-audit.md`). Their loop timing was not analyzed.
 
 Labels: **(a)** documented, **(E)** emulated, **(b)** consensus, **(c)** inference.
 

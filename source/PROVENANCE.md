@@ -36,6 +36,7 @@ Nothing in `source/` is marked *reconstructed*. Every byte shown was matched aga
 | AppleWin `Apple2.rom` | github.com/AppleWin/AppleWin `resource/Apple2.rom` | `09288be705464b608ff190519ab008d3dfcd1b05` | $D000–$FFFF: Integer BASIC + original monitor (RESET `$FF59`) |
 | apple2js `fpbasic.ts` | github.com/whscullin/apple2js `js/roms/system/fpbasic.ts` | `550cee76329992c5618c1127a541aed145897c84` | identical to AppleWin II+ except `$FFFE-$FFFF` (IRQ vector) |
 | apple2js `intbasic.ts` | same repo, `intbasic.ts` | `1da559310c4a1ebd71bff406569a00640e2abfad` | identical to AppleWin `Apple2.rom` over $E000–$F7FF; its $F800 page differs (289 bytes; KEYIN bytes still identical) |
+| AppleWin `Apple2e.rom`, `Apple2e_Enhanced.rom` | github.com/AppleWin/AppleWin `resource/` | `61fa9254628e5bb7236fb474006116d67684d747`, `b8ea90abe135a0031065e01697c4a3a20d51198b` | $C000–$FFFF (16K). Used only by `deck-code-audit.md` for the //e keyboard-wait loops (`$C2D5`/`$CB15` unenhanced, `$C27D`/`$C83B` enhanced) and to re-confirm the RND, seed and copy-loop bytes |
 | apple2js `apple2e.ts`, `apple2enh.ts` | same repo | `cdbca4e0023e72c888ca24d02a19586eeea4c250` (IIe) | Applesoft RND block, seed, copy loop and FP core $E7BE–$EB52 byte-identical at the same addresses; **KEYIN differs** |
 
 Independence: two separate emulator projects with separate histories. Both may trace
@@ -104,8 +105,9 @@ Check the scan image before putting a quote on a slide.
    ineffective) add + MSB/LSB byte swap + renormalize. There is no modulus, so it is not a
    textbook LCG. LCG lattice/spectral theory does not apply directly. **Research and
    slide agents: don't show an LCG modulus, a "period 2³²", or an LCG spectral figure
-   for Applesoft RND without deriving it for this map.** Observed cycles are 37,758 and
-   32,366 (6 seeds tested, not exhaustive).
+   for Applesoft RND without deriving it for this map.** Observed cycles: 37,758, 32,366,
+   12,559, 4,082 and 202. The first two came from my 6 seeds; all five came from the
+   research agent's exhaustive `$CD` sweep, and `deck_audit.py` re-derived all five.
 5. **"Low-order-bit correlation" (BRIEF item 1).** Not supported by these data for the
    leading digits: serial-pair χ² is normal at N ≤ 256 over 57k outputs. What *is*
    demonstrable is a **stuck bit**, fraction bit 25 ≈ 99.75% ones. Recommend rewording
@@ -118,6 +120,14 @@ Check the scan image before putting a quote on a slide.
 7. **$4E/$4F and Applesoft.** Applesoft `RND` never reads the counter. Only Integer BASIC
    `RND` uses it automatically. The BRIEF's item 2 is accurate only if framed as
    "available to programs", or as Integer BASIC's mechanism.
+
+8. **Deck slide 5 captions vs ROM (added for `deck-code-audit.md`).** The image captioned
+   `Unenh_IIe_80col` (`$CB15 GETKEY`) is byte-identical in AppleWin `Apple2e.rom` and
+   apple2js `apple2e.ts`. The image captioned `IIc_16kb` (`$CC71`, `E6 4E D0 1C A5 4F`)
+   matches no //e, ][+ or II image. No //c dump was available, so it is unverified.
+9. **"Loaded dice."** Die faces from `INT(RND(1)*6)+1`, computed by the ROM, are
+   consistent with a fair die over every long cycle (faces, pairs, triples). The ROM result
+   never differed from exact ⌊6x⌋+1 in 128,550 outputs. See `deck-code-audit.md` §1–2.
 
 ## Not verified / out of scope
 
@@ -141,6 +151,7 @@ cd source/tools
 ../../venv/bin/python experiments.py sweep cost resets bits intbasic   # ~1 min
 ../../venv/bin/python experiments.py fadd  # ~2.5 min
 ../../venv/bin/python experiments.py cycles  # ~3.5 min
+../../venv/bin/python deck_audit.py         # deck audit: ROM facts, dice over cycles, RND(-K) sweep, ~4 min
 ```
 
 Results on 2026-09-12: all experiment outputs matched the numbers in the deliverables.
